@@ -1,4 +1,4 @@
-# Copyright 2022 The Brax Authors.
+# Copyright 2024 The Brax Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
 
 """Import top-level classes and functions here for encapsulation/clarity."""
 
-__version__ = '0.1.1'
+__version__ = '0.10.4'
 
-from brax.physics.base import Info
-from brax.physics.base import QP
-from brax.physics.config_pb2 import Config
-from brax.physics.system import System
+from brax.base import Motion
+from brax.base import State
+from brax.base import System
+from brax.base import Transform

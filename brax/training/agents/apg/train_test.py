@@ -1,4 +1,4 @@
-# Copyright 2022 The Brax Authors.
+# Copyright 2024 The Brax Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ class APGTest(parameterized.TestCase):
     """Test APG with a simple env."""
     _, _, metrics = apg.train(
         envs.get_environment('fast'),
+        policy_updates=200,
         episode_length=128,
         num_envs=64,
         num_evals=200,
@@ -45,13 +46,14 @@ class APGTest(parameterized.TestCase):
     env = envs.get_environment('fast')
     original_inference, params, _ = apg.train(
         envs.get_environment('fast'),
+        policy_updates=200,
         episode_length=100,
         action_repeat=4,
         num_envs=16,
         learning_rate=3e-3,
         normalize_observations=normalize_observations,
-        num_evals=200,
-        truncation_length=10)
+        num_evals=200
+    )
     normalize_fn = lambda x, y: x
     if normalize_observations:
       normalize_fn = running_statistics.normalize
@@ -69,6 +71,31 @@ class APGTest(parameterized.TestCase):
     self.assertSequenceEqual(original_action, action)
     env.step(state, action)
 
+  def testTrainDomainRandomize(self):
+    """Test with domain randomization."""
+
+    def rand_fn(sys, rng):
+      @jax.vmap
+      def get_offset(rng):
+        offset = jax.random.uniform(rng, shape=(3,), minval=-0.1, maxval=0.1)
+        pos = sys.link.transform.pos.at[0].set(offset)
+        return pos
+
+      sys_v = sys.tree_replace({'link.inertia.transform.pos': get_offset(rng)})
+      in_axes = jax.tree_map(lambda x: None, sys)
+      in_axes = in_axes.tree_replace({'link.inertia.transform.pos': 0})
+      return sys_v, in_axes
+
+    _, _, _ = apg.train(
+        envs.get_environment('inverted_pendulum', backend='spring'),
+        policy_updates=200,
+        episode_length=100,
+        num_envs=8,
+        num_evals=10,
+        learning_rate=3e-3,
+        normalize_observations=True,
+        randomization_fn=rand_fn,
+    )
 
 if __name__ == '__main__':
   absltest.main()

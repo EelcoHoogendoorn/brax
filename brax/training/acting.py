@@ -1,4 +1,4 @@
-# Copyright 2022 The Brax Authors.
+# Copyright 2024 The Brax Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 """Brax training acting functions."""
 
 import time
-from typing import Callable, Sequence, Tuple
+from typing import Callable, Sequence, Tuple, Union
 
 from brax import envs
 from brax.training.types import Metrics
@@ -23,22 +23,26 @@ from brax.training.types import Policy
 from brax.training.types import PolicyParams
 from brax.training.types import PRNGKey
 from brax.training.types import Transition
+from brax.v1 import envs as envs_v1
 import jax
 import numpy as np
 
+State = Union[envs.State, envs_v1.State]
+Env = Union[envs.Env, envs_v1.Env, envs_v1.Wrapper]
+
 
 def actor_step(
-    env: envs.Env,
-    env_state: envs.State,
+    env: Env,
+    env_state: State,
     policy: Policy,
     key: PRNGKey,
     extra_fields: Sequence[str] = ()
-) -> Tuple[envs.State, Transition]:
+) -> Tuple[State, Transition]:
   """Collect data."""
   actions, policy_extras = policy(env_state.obs, key)
   nstate = env.step(env_state, actions)
   state_extras = {x: nstate.info[x] for x in extra_fields}
-  return nstate, Transition(
+  return nstate, Transition(  # pytype: disable=wrong-arg-types  # jax-ndarray
       observation=env_state.obs,
       action=actions,
       reward=nstate.reward,
@@ -51,13 +55,13 @@ def actor_step(
 
 
 def generate_unroll(
-    env: envs.Env,
-    env_state: envs.State,
+    env: Env,
+    env_state: State,
     policy: Policy,
     key: PRNGKey,
     unroll_length: int,
     extra_fields: Sequence[str] = ()
-) -> Tuple[envs.State, Transition]:
+) -> Tuple[State, Transition]:
   """Collect trajectories of given unroll_length."""
 
   @jax.jit
@@ -94,10 +98,10 @@ class Evaluator:
     self._key = key
     self._eval_walltime = 0.
 
-    eval_env = envs.wrappers.EvalWrapper(eval_env)
+    eval_env = envs.training.EvalWrapper(eval_env)
 
     def generate_eval_unroll(policy_params: PolicyParams,
-                             key: PRNGKey) -> envs.State:
+                             key: PRNGKey) -> State:
       reset_keys = jax.random.split(key, num_eval_envs)
       eval_first_state = eval_env.reset(reset_keys)
       return generate_unroll(
@@ -122,10 +126,17 @@ class Evaluator:
     eval_metrics = eval_state.info['eval_metrics']
     eval_metrics.active_episodes.block_until_ready()
     epoch_eval_time = time.time() - t
-    metrics = {
-        f'eval/episode_{name}': np.mean(value) if aggregate_episodes else value
-        for name, value in eval_metrics.episode_metrics.items()
-    }
+    metrics = {}
+    for fn in [np.mean, np.std]:
+      suffix = '_std' if fn == np.std else ''
+      metrics.update(
+          {
+              f'eval/episode_{name}{suffix}': (
+                  fn(value) if aggregate_episodes else value
+              )
+              for name, value in eval_metrics.episode_metrics.items()
+          }
+      )
     metrics['eval/avg_episode_length'] = np.mean(eval_metrics.episode_steps)
     metrics['eval/epoch_eval_time'] = epoch_eval_time
     metrics['eval/sps'] = self._steps_per_unroll / epoch_eval_time
@@ -136,4 +147,4 @@ class Evaluator:
         **metrics
     }
 
-    return metrics
+    return metrics  # pytype: disable=bad-return-type  # jax-ndarray

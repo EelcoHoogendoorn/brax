@@ -1,4 +1,4 @@
-# Copyright 2022 The Brax Authors.
+# Copyright 2024 The Brax Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,7 +46,7 @@ class Transition(NamedTuple):
   reward: NestedArray
   discount: NestedArray
   next_observation: NestedArray
-  extras: NestedArray = ()
+  extras: NestedArray = ()  # pytype: disable=annotation-type-mismatch  # jax-ndarray
 
 
 class Policy(Protocol):

@@ -1,4 +1,4 @@
-# Copyright 2022 The Brax Authors.
+# Copyright 2024 The Brax Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,8 +30,9 @@ class PPOTest(parameterized.TestCase):
 
   def testTrain(self):
     """Test PPO with a simple env."""
+    fast = envs.get_environment('fast')
     _, _, metrics = ppo.train(
-        envs.get_environment('fast'),
+        fast,
         num_timesteps=2**15,
         episode_length=128,
         num_envs=64,
@@ -44,9 +45,31 @@ class PPOTest(parameterized.TestCase):
         num_updates_per_batch=4,
         normalize_observations=True,
         seed=2,
+        num_evals=3,
         reward_scaling=10,
         normalize_advantage=False)
     self.assertGreater(metrics['eval/episode_reward'], 135)
+    self.assertEqual(fast.reset_count, 2)  # type: ignore
+    self.assertEqual(fast.step_count, 2)  # type: ignore
+
+  def testTrainV2(self):
+    """Test PPO with a v2 env."""
+    _, _, _ = ppo.train(
+        envs.get_environment('inverted_pendulum', backend='spring'),
+        num_timesteps=2**15,
+        episode_length=1000,
+        num_envs=64,
+        learning_rate=3e-4,
+        entropy_cost=1e-2,
+        discounting=0.95,
+        unroll_length=5,
+        batch_size=64,
+        num_minibatches=8,
+        num_updates_per_batch=4,
+        normalize_observations=True,
+        seed=2,
+        reward_scaling=10,
+        normalize_advantage=False)
 
   @parameterized.parameters(True, False)
   def testNetworkEncoding(self, normalize_observations):
@@ -73,6 +96,40 @@ class PPOTest(parameterized.TestCase):
     action = inference(decoded_params)(state.obs, jax.random.PRNGKey(0))[0]
     self.assertSequenceEqual(original_action, action)
     env.step(state, action)
+
+  def testTrainDomainRandomize(self):
+    """Test PPO with domain randomization."""
+
+    def rand_fn(sys, rng):
+      @jax.vmap
+      def get_offset(rng):
+        offset = jax.random.uniform(rng, shape=(3,), minval=-0.1, maxval=0.1)
+        pos = sys.link.transform.pos.at[0].set(offset)
+        return pos
+
+      sys_v = sys.tree_replace({'link.inertia.transform.pos': get_offset(rng)})
+      in_axes = jax.tree_map(lambda x: None, sys)
+      in_axes = in_axes.tree_replace({'link.inertia.transform.pos': 0})
+      return sys_v, in_axes
+
+    _, _, _ = ppo.train(
+        envs.get_environment('inverted_pendulum', backend='spring'),
+        num_timesteps=2**15,
+        episode_length=1000,
+        num_envs=64,
+        learning_rate=3e-4,
+        entropy_cost=1e-2,
+        discounting=0.95,
+        unroll_length=5,
+        batch_size=64,
+        num_minibatches=8,
+        num_updates_per_batch=4,
+        normalize_observations=True,
+        seed=2,
+        reward_scaling=10,
+        normalize_advantage=False,
+        randomization_fn=rand_fn,
+    )
 
 
 if __name__ == '__main__':

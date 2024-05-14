@@ -1,4 +1,4 @@
-# Copyright 2022 The Brax Authors.
+# Copyright 2024 The Brax Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -55,15 +55,18 @@ def make_apg_networks(
     preprocess_observations_fn: types.PreprocessObservationFn = types
     .identity_observation_preprocessor,
     hidden_layer_sizes: Sequence[int] = (32,) * 4,
-    activation: networks.ActivationFn = linen.swish) -> APGNetworks:
+    activation: networks.ActivationFn = linen.elu,
+    layer_norm: bool = True) -> APGNetworks:
   """Make APG networks."""
   parametric_action_distribution = distribution.NormalTanhDistribution(
-      event_size=action_size)
+      event_size=action_size, var_scale=0.1)
   policy_network = networks.make_policy_network(
       parametric_action_distribution.param_size,
       observation_size,
       preprocess_observations_fn=preprocess_observations_fn,
-      hidden_layer_sizes=hidden_layer_sizes, activation=activation)
+      hidden_layer_sizes=hidden_layer_sizes, activation=activation,
+      kernel_init=linen.initializers.orthogonal(0.01),
+      layer_norm=layer_norm)
   return APGNetworks(
       policy_network=policy_network,
       parametric_action_distribution=parametric_action_distribution)
